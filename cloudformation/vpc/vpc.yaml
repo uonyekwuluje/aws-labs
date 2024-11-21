@@ -1,0 +1,259 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >-
+  AWS CloudFormation sample template. 
+  Create a custom VPC with a pair of public and private subnets spread across two AZs
+
+Parameters:
+  paramVpcCIDR:
+    Description: Enter the IP range (CIDR notation) for VPC
+    Type: String
+    Default: 10.192.0.0/16
+  paramPublicSubnet1CIDR:
+    Description: Enter the IP range (CIDR notation)  for the public subnet in AZ A
+    Type: String
+    Default: 10.192.10.0/24
+  paramPublicSubnet2CIDR:
+    Description: Enter the IP range (CIDR notation)  for the public subnet in AZ B
+    Type: String
+    Default: 10.192.11.0/24
+  paramPrivateSubnet1CIDR:
+    Description: Enter the IP range (CIDR notation)  for the private subnet in AZ A
+    Type: String
+    Default: 10.192.20.0/24
+  paramPrivateSubnet2CIDR:
+    Description: Enter the IP range (CIDR notation)  for the private subnet in AZ B
+    Type: String
+    Default: 10.192.21.0/24
+  paramUniqueName:
+    Description: Give a unique name for "CloudFormationLab" tag value
+    Type: String
+    Default: "dev"
+  DomainName:
+    Description: Name of VPC Domain
+    Type: String
+    Default: "infralabs"
+
+
+
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref paramVpcCIDR
+      EnableDnsSupport: true 
+      EnableDnsHostnames: true 
+      Tags:
+      - Key: Name
+        Value: !Ref paramUniqueName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "internetgateway" ] ]
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "PublicRouteTable" ] ]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+        
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ] 
+      CidrBlock: !Ref paramPublicSubnet1CIDR
+      MapPublicIpOnLaunch: true 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "PublicSubnet1" ] ]
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ] 
+      CidrBlock: !Ref paramPublicSubnet2CIDR
+      MapPublicIpOnLaunch: true 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "PublicSubnet2" ] ]
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+  
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  EIPforNatGateway:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "EIPforNatGateway" ] ]
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIPforNatGateway.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "NatGateway" ] ]
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "PrivateRouteTable" ] ]
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway 
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref paramPrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "PrivateSubnet1" ] ]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref paramPrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref paramUniqueName, "PrivateSubnet2" ] ]
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+  
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: !Join [' ', [Private Hosted Zone for, !Ref DomainName]]
+      HostedZoneTags:
+        - Key: environment
+          Value: !Ref paramUniqueName
+      Name: !Join ['', [!Ref paramUniqueName, ., !Ref DomainName]]
+      VPCs:
+        - VPCId: !Ref VPC
+          VPCRegion: us-east-1
+
+
+
+  BaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [base-security-group, sg]]
+      GroupDescription: "Base Security Groups"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join ["-", [base, sg]]
+
+
+
+
+Outputs:
+  outputVPC:
+    Description: Infra VPC
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::Region}-${AWS::StackName}"  
+  outputPublicSubnet1:
+    Description: Public Subnet 1
+    Value: !Ref PublicSubnet1
+    Export: 
+      Name: !Sub "${AWS::Region}-${AWS::StackName}-PublicSubnet1"  
+  outputPublicSubnet2:
+    Description: Public Subnet 2
+    Value: !Ref PublicSubnet2
+    Export: 
+      Name: !Sub "${AWS::Region}-${AWS::StackName}-PublicSubnet2"  
+  outputPrivateSubnet1:
+    Description: Private Subnet 1
+    Value: !Ref PrivateSubnet1
+    Export: 
+      Name: !Sub "${AWS::Region}-${AWS::StackName}-PrivateSubnet1"  
+  outputPrivateSubnets:
+    Description: Private Subnet 2
+    Value: !Ref PrivateSubnet2
+    Export: 
+      Name: !Sub "${AWS::Region}-${AWS::StackName}-PrivateSubnet2"  
+  outputPrivateHostedZone:
+    Description: Private Zone ID
+    Value: !Ref PrivateHostedZone
+    Export:
+      Name: !Sub "${AWS::Region}-${AWS::StackName}-PrivateHostedZoneId"
