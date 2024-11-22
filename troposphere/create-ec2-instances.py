@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import boto3
-from troposphere import ec2, Tags, ImportValue, Template, Ref
+from troposphere import ec2, Tags, ImportValue, Template, Ref, Base64, Join
 
 client = boto3.client('ec2', region_name='us-east-1')
 cfn_template = boto3.client('cloudformation', region_name='us-east-1')
@@ -88,14 +88,43 @@ if __name__ == '__main__':
     print(f"Private Subnet ID => {private_subnet_id}")
     print(f"Security Group ID => {security_group_id}")
 
+
+    infraSecGrpBase = ec2.SecurityGroup('InfrabaseSecurityGroup')
+    infraSecGrpBase.GroupDescription = "Base Infra Security Group"
+    infraSecGrpBase.GroupName = "BaseInfraSecurity"
+    infraSecGrpBase.VpcId = vpc_id
+    infraSecGrpBase.SecurityGroupIngress = [
+            ec2.SecurityGroupRule(
+                IpProtocol="tcp",
+                FromPort="22",
+                ToPort="22",
+                CidrIp="0.0.0.0/0",
+            ),
+            ec2.SecurityGroupRule(
+                IpProtocol="tcp",
+                FromPort="80",
+                ToPort="80",
+                CidrIp="0.0.0.0/0",
+            ),
+    ]
+    infraSecGrpBase.Tags=Tags(
+       Name="BaseInfraSecurity-SG",
+       Environment=vpc_name,
+    )
+    t.add_resource(infraSecGrpBase)
+
     for i in range(public_nodes):
+        serverName = f"pubsvr0{i}"
         instance = ec2.Instance(
             "pubsvr0{}".format(str(i)),
             ImageId=UBUNTU_AMI_ID,
-            #UserData=Base64(Join("", userData)),
+            UserData=Base64(Join('', [
+              "#!/bin/bash\n"
+              "sudo hostnamectl set-hostname ",serverName,"\n"       
+            ])),
             InstanceType=EC2_INSTANCE_TYPE,
             KeyName=EC2_KEYPAIR,
-            SecurityGroupIds=[security_group_id],
+            SecurityGroupIds=[Ref(infraSecGrpBase)],
             SubnetId=public_subnet_id,
             Tags=Tags(
               Name=f"pub-svr0{i}",
@@ -124,6 +153,8 @@ if __name__ == '__main__':
     print(t.to_yaml())
 
     stack_name = "dev-ec2-stack"
+    print(f"Creating {stack_name} stack")
+
     cfn_template.create_stack(
         StackName=stack_name,
         TemplateBody=t.to_yaml()
@@ -132,3 +163,4 @@ if __name__ == '__main__':
     waiter.wait(
         StackName=stack_name
     )
+    print(f"{stack_name} stack creation complete")
