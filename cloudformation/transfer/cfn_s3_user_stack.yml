@@ -1,0 +1,54 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: S3 User Bucket for IP Address
+
+Parameters:
+  TransferBucketName:
+    Description: S3 Bucket Allow List
+    Type: String
+    Default: infracid-transfer-ip-allowlist
+#  AuthorizedRoleArn:
+#    Type: String
+#    Description: The ARN of the IAM role authorized to access this bucket.
+#    # Example: arn:aws:iam::123456789012:role/MyAuthorizedRole
+
+
+Resources:
+  VersionedS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref TransferBucketName        
+      VersioningConfiguration:
+         Status: Enabled
+      PublicAccessBlockConfiguration:
+         BlockPublicAcls: true
+         BlockPublicPolicy: true
+         IgnorePublicAcls: true
+         RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+#  VersionedBucketPolicy:
+#    Type: AWS::S3::BucketPolicy
+#    Properties:
+#      Bucket: !Ref TransferBucketName
+#      PolicyDocument:
+#        Version: '2012-10-17'
+#        Statement:
+#          - Sid: DenyAllExceptAuthorizedRole
+#            Effect: Deny
+#            Principal: "*"
+#            Action: "s3:*"
+#            Resource: 
+#              - !Sub "arn:aws:s3:::${VersionedS3Bucket}"
+#              - !Sub "arn:aws:s3:::${VersionedS3Bucket}/*"
+#            Condition:
+#              StringNotLike:
+#                # Using aws:PrincipalArn handles role sessions and is the current AWS recommendation
+#                aws:PrincipalArn: 
+#                  - !Ref AuthorizedRoleArn
+#                  # Often recommended to include the role session wildcard for assumed roles
+#                  - !Sub "${AuthorizedRoleArn}/*"
