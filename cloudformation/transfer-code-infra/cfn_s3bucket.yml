@@ -1,0 +1,27 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: S3 Bucket Operations
+
+Parameters:
+  TransferBucketName:
+    Description: S3 Bucket Allow List
+    Type: String
+    Default: infracid-transfer-ip-allowlist
+
+Resources:
+  VersionedS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref TransferBucketName
+      VersioningConfiguration:
+         Status: Enabled
+      PublicAccessBlockConfiguration:
+         BlockPublicAcls: true
+         BlockPublicPolicy: true
+         IgnorePublicAcls: true
+         RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256

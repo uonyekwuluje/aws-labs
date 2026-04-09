@@ -1,0 +1,432 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: SFTPD Family Stack
+
+Parameters:
+  DomainName:
+    Description: Domain name
+    Type: String
+    Default: ucheonyekwuluje.com
+  PublicHostedZoneID:
+    Description: Route53 Public Hosted Zone for the environment
+    Type: AWS::Route53::HostedZone::Id
+    Default: 'Z012849315SC3'
+  TransferBucketName:
+    Description: S3 Bucket Allow List
+    Type: String
+    Default: infracid-transfer-ip-allowlist
+
+
+Mappings:
+  Transfer:
+    us-east-1:
+      sftpServer: 'transferprod'
+      cidr: '10.21'
+      vpcname: 'prod'
+    us-east-2:
+      sftpServer: 'transferdev'
+      cidr: '10.22'
+      vpcname: 'dev'
+
+
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Join ['', [!FindInMap [Transfer, !Ref "AWS::Region", cidr], .0.0/16]]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: !FindInMap [Transfer, !Ref "AWS::Region", vpcname]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [!FindInMap [Transfer, !Ref "AWS::Region", vpcname], "internetgateway" ] ]
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [!FindInMap [Transfer, !Ref "AWS::Region", vpcname], "routetable" ] ]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+        
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Join ['', [!FindInMap [Transfer, !Ref "AWS::Region", cidr], .0.0/24]]
+      MapPublicIpOnLaunch: true 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [!FindInMap [Transfer, !Ref "AWS::Region", vpcname], "publicsubnet1" ] ]
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+  
+  EIPforNatGateway1:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [!FindInMap [Transfer, !Ref "AWS::Region", vpcname], "EIPforNatGateway1" ] ]
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIPforNatGateway1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [!FindInMap [Transfer, !Ref "AWS::Region", vpcname], "NatGateway1" ] ]
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [!FindInMap [Transfer, !Ref "AWS::Region", vpcname], "PrivateRouteTable1" ] ]
+
+  PrivateRouteForAz1:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1 
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ] 
+      CidrBlock: !Join ['', [!FindInMap [Transfer, !Ref "AWS::Region", cidr], .2.0/24]]
+      MapPublicIpOnLaunch: false 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [!FindInMap [Transfer, !Ref "AWS::Region", vpcname], "PrivateSubnet1" ] ]
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+
+
+
+  TransferPrefixList:
+    Type: AWS::EC2::PrefixList
+    Properties:
+      PrefixListName: "DevTransfer"
+      AddressFamily: "IPv4"
+      MaxEntries: 30
+      Tags:
+        - Key: "Name"
+          Value: "DevTransfer"        
+
+#  TransferSecurityGroup:
+#    Type: AWS::EC2::SecurityGroup
+#    Properties:
+#      GroupName: "TransferSG"
+#      GroupDescription: "Transfer Service Security Group"
+#      VpcId: !Ref VPC
+#      SecurityGroupIngress:
+#      - IpProtocol: tcp
+#        FromPort: 80
+#        ToPort: 80
+#        CidrIp: 0.0.0.0/0
+#      - IpProtocol: tcp
+#        FromPort: 443
+#        ToPort: 443
+#        CidrIp: 0.0.0.0/0
+#      - IpProtocol: tcp
+#        FromPort: 22
+#        ToPort: 22
+#        CidrIp: 0.0.0.0/0
+#      - IpProtocol: icmp
+#        FromPort: -1
+#        ToPort: -1
+#        CidrIp: 0.0.0.0/0
+#      Tags:
+#      - Key: Name
+#        Value: "TransferSG"
+
+  TransferSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "TransferSG"
+      GroupDescription: "Transfer Service Security Group"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourcePrefixListId: !Ref TransferPrefixList    
+      Tags:
+      - Key: Name
+        Value: "TransferSG"
+
+
+  TransferLoggingRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: transfer.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSTransferLoggingAccess'
+
+  TransferServerEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+
+  SFTPServer:
+    Type: AWS::Transfer::Server
+    Properties:
+      Domain: S3
+      EndpointType: VPC
+      EndpointDetails:
+        AddressAllocationIds:
+          - !GetAtt TransferServerEIP.AllocationId
+        VpcId: !Ref VPC
+        SubnetIds: 
+          - !Ref PublicSubnet1
+        SecurityGroupIds: 
+          - !Ref TransferSecurityGroup
+      LoggingRole: !GetAtt TransferLoggingRole.Arn
+      IdentityProviderType: SERVICE_MANAGED
+      Protocols:
+        - SFTP
+      Tags:
+        - Key: transfer:customHostname
+          Value: !Join [".", [!FindInMap [Transfer, !Ref "AWS::Region", sftpServer], !Ref 'DomainName']]
+        - Key: Environment
+          Value: !FindInMap [Transfer, !Ref "AWS::Region", vpcname]
+
+
+
+  SFTPServerS3Bucket:
+    Type: AWS::S3::Bucket
+    #DeletionPolicy: Retain
+    Properties:
+      BucketName: !Join ["-", [!FindInMap [Transfer, !Ref "AWS::Region", sftpServer], !Ref 'DomainName']]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Application
+          Value: !Join ["-", [!FindInMap [Transfer, !Ref "AWS::Region", sftpServer], !Ref 'DomainName']]        
+
+  SFTPServerDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Join [".", [!FindInMap [Transfer, !Ref "AWS::Region", sftpServer], !Ref 'DomainName']]
+      HostedZoneId: !Ref PublicHostedZoneID
+      Type: CNAME
+      Comment: SFTP Transfer custom hostname
+      TTL: 300
+      ResourceRecords:
+        - !Sub ${SFTPServer.ServerId}.server.transfer.${AWS::Region}.amazonaws.com
+
+  SFTPUserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - transfer.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: S3FullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketLocation
+                Resource: "*"
+        - PolicyName: AllowListingOfUserFolder
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt SFTPServerS3Bucket.Arn
+        - PolicyName: HomeDirObjectAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Resource: !Sub "${SFTPServerS3Bucket.Arn}/*"
+
+  TestUser1:
+    Type: AWS::Transfer::User
+    Properties:
+      ServerId: !GetAtt SFTPServer.ServerId
+      UserName: user1
+      HomeDirectory: !Sub "/${SFTPServerS3Bucket}/home/user1"
+      Policy: >
+          {
+            "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "AllowListingOfUserFolder",
+                            "Effect": "Allow",
+                            "Action": "s3:ListBucket",
+                            "Resource": "arn:aws:s3:::${transfer:HomeBucket}",
+                            "Condition": {
+                                "StringLike": {
+                                    "s3:prefix": [
+                                        "home/${transfer:UserName}/*",
+                                        "home/${transfer:UserName}"
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "HomeDirObjectAccess",
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:PutObject",
+                                "s3:GetObject",
+                                "s3:GetObjectVersion",
+                                "s3:DeleteObject",
+                                "s3:DeleteObjectVersion"
+                            ],
+                            "Resource": "arn:aws:s3:::${transfer:HomeDirectory}*"
+                        }
+                    ]
+            }
+      Role: !GetAtt SFTPUserRole.Arn
+      SshPublicKeys:
+        - 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCWsahSo8n90owoMPiBusYWBElNkliRoe0Po4iyB1v6xZGVoXZBDu3a1G/5FfXH9iB94+p868oQYbP/fkl/ay0TPhbyo3cg38ofQzo7+gfa9rhR+gbsLsxChV9GOJGNSe8cIW2pJXVy+01lfoDbt72SabXUAdo4op99F4NDd8te1Xiy+aolsLMeN6RGnPDgf2L02x8Q8MXRcLbnIhnSgVpkE+wFtJb+zEdfgXNRBGeM4lFzXJmp9X7zZbMYU1ES2rnRLKGrCOgRkg5mwN6TxgGGEz5M4PAwQNzyLMp+D9e/I3yjZCNTOL+A3wPj3IkF/sbaD25Cvu7MSYCOPPv9PYp1 sftpd-user-key' 
+      Tags:
+        - Key: User
+          Value: user1
+
+
+  TestUser2:
+    Type: AWS::Transfer::User
+    Properties:
+      ServerId: !GetAtt SFTPServer.ServerId
+      UserName: user2
+      HomeDirectory: !Sub "/${SFTPServerS3Bucket}/home/user2"
+      Policy: >
+          {
+            "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Sid": "AllowListingOfUserFolder",
+                            "Effect": "Allow",
+                            "Action": "s3:ListBucket",
+                            "Resource": "arn:aws:s3:::${transfer:HomeBucket}",
+                            "Condition": {
+                                "StringLike": {
+                                    "s3:prefix": [
+                                        "home/${transfer:UserName}/*",
+                                        "home/${transfer:UserName}"
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "Sid": "HomeDirObjectAccess",
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:PutObject",
+                                "s3:GetObject",
+                                "s3:GetObjectVersion",
+                                "s3:DeleteObject",
+                                "s3:DeleteObjectVersion"
+                            ],
+                            "Resource": "arn:aws:s3:::${transfer:HomeDirectory}*"
+                        }
+                    ]
+            }
+      Role: !GetAtt SFTPUserRole.Arn
+      SshPublicKeys:
+        - 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCWsahSo8n90owoMPiBusYWBElNkliRoe0Po4iyB1v6xZGVoXZBDu3a1G/5FfXH9iB94+p868oQYbP/fkl/ay0TPhbyo3cg38ofQzo7+gfa9rhR+gbsLsxChV9GOJGNSe8cIW2pJXVy+01lfoDbt72SabXUAdo4op99F4NDd8te1Xiy+aolsLMeN6RGnPDgf2L02x8Q8MXRcLbnIhnSgVpkE+wFtJb+zEdfgXNRBGeM4lFzXJmp9X7zZbMYU1ES2rnRLKGrCOgRkg5mwN6TxgGGEz5M4PAwQNzyLMp+D9e/I3yjZCNTOL+A3wPj3IkF/sbaD25Cvu7MSYCOPPv9PYp1 sftpd-user-key'
+      Tags:
+        - Key: User
+          Value: user2
+            
+  VersionedS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Ref TransferBucketName        
+      VersioningConfiguration:
+         Status: Enabled
+      PublicAccessBlockConfiguration:
+         BlockPublicAcls: true
+         BlockPublicPolicy: true
+         IgnorePublicAcls: true
+         RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+
+
+Outputs:
+  VPC:
+    Description: Infra Ops VPC
+    Value: !Ref VPC
+  PublicSubnet1:
+    Description: Public Subnet 1
+    Value: !Ref PublicSubnet1
+  PrivateSubnet1:
+    Description: Private Subnet 1
+    Value: !Ref PrivateSubnet1
+  SftpServerId:
+    Description: 'SftpD Transfer Server'
+    Value: !GetAtt SFTPServer.ServerId 
