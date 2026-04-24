@@ -132,6 +132,76 @@ aws cloudformation update-stack --stack-name s3ops-stack --capabilities CAPABILI
 aws cloudformation delete-stack --stack-name s3ops-stack
 
 
+
+
+
+
+
+# Delete S3 Bucket Contents
+-------------------------------
+aws s3 ls
+>>
+2026-04-20 14:40:48 infracid-transfer-ip-allowlist
+2026-04-12 13:38:08 infralabs-terraform-tfstate
+2026-04-20 14:40:48 transferprod-ucheonyekwuluje.com
+
+
+aws s3 rb s3://infracid-transfer-ip-allowlist/ --force
+aws s3 rb s3://infralabs-terraform-tfstate/ --force
+
+aws s3api list-object-versions --bucket infralabs-terraform-tfstate
+
+S3_BUCKET="infracid-transfer-ip-allowlist"
+
+# List all object versions
+----------------------------------------
+aws s3api list-object-versions \
+  --bucket ${S3_BUCKET} \
+  --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}'
+
+
+# Delete all versions
+----------------------------------------
+aws s3api list-object-versions \
+  --bucket ${S3_BUCKET} \
+  --output json \
+  --query 'Versions[].{Key:Key,VersionId:VersionId}' | \
+  jq -c '.[]' | while read -r obj; do
+    key=$(echo $obj | jq -r '.Key')
+    version=$(echo $obj | jq -r '.VersionId')
+    echo "Deleting $key version $version"
+    aws s3api delete-object --bucket ${S3_BUCKET} --key "$key" --version-id "$version"
+  done
+
+
+# Delete all delete markers
+----------------------------------------
+aws s3api list-object-versions \
+  --bucket ${S3_BUCKET} \
+  --output json \
+  --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' | \
+  jq -c '.[]' | while read -r obj; do
+    key=$(echo $obj | jq -r '.Key')
+    version=$(echo $obj | jq -r '.VersionId')
+    echo "Deleting marker $key version $version"
+    aws s3api delete-object --bucket ${S3_BUCKET} --key "$key" --version-id "$version"
+  done
+
+# Delete Bucket
+-----------------------------------------
+aws s3 rb s3://${S3_BUCKET}/ --force
+
+
+
+
+
+
+
+
+
+
+
+
 # Delete S3 Bucket Contents
 -------------------------------
 aws s3 rb s3://infracid-transfer-ip-allowlist/ --force
@@ -143,42 +213,65 @@ aws s3 cp uche.txt s3://infracid-transfer-ip-allowlist/uche.txt
 aws s3 cp s3://infracid-transfer-ip-allowlist/uche.txt .
 
 
-./s3ops.py adduser-ip-addresses-s3 --username uche --ip-cidr 12.34.56.7
+./s3ops.py adduser-ip-addresses-s3 --username user1 --ip-cidr 172.18.5.40
+./s3ops.py adduser-ip-addresses-s3 --username user1 --ip-cidr 11.10.10.3
+
+./s3ops.py adduser-ip-addresses-s3 --username user2 --ip-cidr 24.38.90.90
+./s3ops.py adduser-ip-addresses-s3 --username user2 --ip-cidr 192.168.1.4
+
+./s3ops.py adduser-ip-addresses-s3 --username user3 --ip-cidr 64.68.145.55
+./s3ops.py adduser-ip-addresses-s3 --username user3 --ip-cidr 70.87.87.96
 >>
 Add IP Address for user uche
 
-./s3ops.py removeuser-ip-addresses-s3 --username uche --ip-cidr 172.34.6.7
+# Remove IP Address from User File
+-------------------------------
+./s3ops.py removeuser-ip-addresses-s3 --username user2 --ip-cidr 10.0.0.3
 >>
 Remove IP Address 172.34.6.7
 
+# List IP Addresses
+-------------------------------
 ./s3ops.py list-ip-addresses
 >>
 
 ./s3ops.py delete-ip-addresses
 >>
 
+# Update/Sync Security Group
+------------------------------
+./s3ops.py security-group-syncops
+
+
+
 # Copy Addresses
 --------------------------------------------------
-aws s3 cp uche.txt s3://infracid-transfer-ip-allowlist/uche.txt
 aws s3 cp user1.txt s3://infracid-transfer-ip-allowlist/user1.txt
 aws s3 cp user2.txt s3://infracid-transfer-ip-allowlist/user2.txt
+aws s3 cp user3.txt s3://infracid-transfer-ip-allowlist/user3.txt
 
-vim uche.txt 
->>
-192.168.1.4/32
-10.0.0.3/24
 
 vim user1.txt
 >>
 172.18.5.40/32
 11.10.10.3/32
-
+192.168.1.4/32
 
 vim user2.txt
 >>
 24.38.90.90/32
 17.2.60.3/32
+10.0.0.3/24
 
+vim user3.txt
+>>
+19.68.10.40/32
+
+
+
+
+aws ec2 describe-security-groups \
+    --group-ids sg-0b0a902009441cefb
 
 
 
@@ -204,13 +297,29 @@ cat uche.txt
 
 
 
-# Validate IP Address
-def is_valid_ipv4_address(address: str) -> bool:
-    try:
-        ipaddress.IPv4Address(address)
-        return True
-    except ipaddress.AddressValueError:
-        return False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
