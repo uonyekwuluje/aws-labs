@@ -1,0 +1,538 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >-
+  AWS CloudFormation All InOne Environment. 
+  VPC with two public and two private subnet
+
+Parameters:
+  VPCName:
+    Description: VPC Name
+    Type: String
+    Default: 'dev'
+  PublicHostedZoneId:
+    Description: Route53 Public Hosted Zone. [ucheonyekwuluje.com] 
+    Type: AWS::Route53::HostedZone::Id
+  PublicHostedZoneName:
+    Description: Public Domain Name
+    Type: String
+    Default: 'ops.wiley.com'
+  PrivateHostedZoneName:
+    Description: Private Hosted Zone
+    Type: String
+    Default: 'infracl'
+  KeyName:
+    Description: EC2 Keyname
+    Type: String
+    Default: 'infracidlabs-key'
+  BastionInstanceID:
+    Description: Bastion Instance ID
+    Type: String
+    Default: 'ami-0521cb2d60cfbb1a6'
+  Ubuntu24InstanceAMI:
+    Description: Ubuntu24 EC2 Instance AMI 
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id'
+  BastionInstanceType:
+    Description: Bastion EC2 Instance Type
+    Type: String
+    Default: 't2.small'
+  CIDROctet:
+    Description: CIDR Block Octets
+    Type: String
+    Default: 10.20
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN
+    Default: 'arn:aws:acm:us-east-1:5:certificate/c2b376b2-27da-4a56-822b-277db52c823e'
+  OperationHostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID
+    Default: 'Z00dddddfghjrtyddrr31D'
+  JenkinsDNSName:
+    Type: String
+    Description: jenkins.opes.wileye.com
+    Default: 'jenkins.ops.wileye.com'
+
+
+
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Join ['', [!Ref CIDROctet, .0.0/16]]
+      EnableDnsSupport: true 
+      EnableDnsHostnames: true 
+      Tags:
+      - Key: Name
+        Value: !Ref VPCName
+
+  PublicNACL:
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Join [ "-", [ !Ref VPCName, "vpc-nacl" ] ]
+
+  NaclRulesForInboundTCP:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: '100'
+      Protocol: '6'
+      RuleAction: allow
+      Egress: 'false'
+      CidrBlock: '0.0.0.0/0'
+      PortRange:
+        From: '0'
+        To: '65535'
+
+  NaclRulesForOutboundTCP:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId: !Ref PublicNACL
+      RuleNumber: '100'
+      Protocol: '6'
+      RuleAction: allow
+      Egress: 'true'
+      CidrBlock: '0.0.0.0/0'
+      PortRange:
+        From: '0'
+        To: '65535'
+
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "internetgateway" ] ]
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "routetable" ] ]
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+        
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: "us-east-1a"
+      CidrBlock: !Join ['', [!Ref CIDROctet, .11.0/24]]
+      MapPublicIpOnLaunch: true 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "publicsubnet1" ] ]
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: "us-east-1b"
+      CidrBlock: !Join ['', [!Ref CIDROctet, .12.0/24]]
+      MapPublicIpOnLaunch: true 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "publicsubnet2" ] ]
+
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+
+  EIPforNatGateway1:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "EIPforNatGateway1" ] ]
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIPforNatGateway1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "NatGateway1" ] ]
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "PrivateRouteTable1" ] ]
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1 
+
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: "us-east-1a"
+      CidrBlock: !Join ['', [!Ref CIDROctet, .14.0/24]]
+      MapPublicIpOnLaunch: false 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "PrivateSubnet1" ] ]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: "us-east-1b"
+      CidrBlock: !Join ['', [!Ref CIDROctet, .15.0/24]]
+      MapPublicIpOnLaunch: false 
+      Tags:
+      - Key: Name
+        Value: !Join [ "-", [ !Ref VPCName, "PrivateSubnet2" ] ]
+
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: !Join [' ', [Private Hosted Zone for, !Ref VPCName]]
+      HostedZoneTags:
+        - Key: Name
+          Value: !Join ['', [!Ref VPCName, ., !Ref PrivateHostedZoneName]] 
+      Name: !Join ['', [!Ref VPCName, ., !Ref PrivateHostedZoneName]]
+      VPCs:
+        - VPCId: !Ref VPC
+          VPCRegion: !Ref "AWS::Region"
+ 
+  ClusterInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ClusterRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - ec2:DescribeInstances 
+                  - ec2:DescribeImages
+                  - ec2:DescribeTags 
+                  - ec2:DescribeSnapshots
+                  - iam:PassRole
+                Resource: '*'
+
+  ClusterEC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ClusterInstanceRole
+
+  PublicSubnetNaclAssociation1:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      NetworkAclId: !Ref PublicNACL
+  PublicSubnetNaclAssociation2:
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      NetworkAclId: !Ref PublicNACL
+
+  # =================== Bastion Instance ==================== #
+  SecurityGroupBastion:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Bastion Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref VPCName
+              - '-Bastion-SecurityGroup'
+
+  SecurityGroupIngressSSHBastion:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      CidrIp: 0.0.0.0/0
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      GroupId: !Ref SecurityGroupBastion
+
+  Bastion:
+    Type: 'AWS::EC2::Instance'
+    DependsOn:
+      - SecurityGroupBastion
+    Properties:
+      ImageId: !Ref BastionInstanceID
+      InstanceType: !Ref BastionInstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref SecurityGroupBastion
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - 'bastion'
+              - .
+              - !Ref VPCName
+              - .
+              - !Ref PrivateHostedZoneName
+
+  RecordSetGroupJumpboxPrivateDNS:
+    Type: 'AWS::Route53::RecordSetGroup'
+    DependsOn: Bastion
+    Properties:
+      Comment: Bastion Private DNS RecordSetGroup
+      HostedZoneId: !Ref PrivateHostedZone
+      RecordSets:
+        - Name: !Join
+            - ''
+            - - 'bastion'
+              - .
+              - !Ref VPCName
+              - . 
+              - !Ref PrivateHostedZoneName
+              - .
+          Type: A
+          TTL: '300'
+          ResourceRecords:
+            - !GetAtt
+              - Bastion
+              - PrivateIp
+
+  RecordSetGroupBastionPublicDNS:
+    Type: 'AWS::Route53::RecordSetGroup'
+    DependsOn: Bastion
+    Properties:
+      Comment: Bastion Public DNS RecordSetGroup
+      HostedZoneId: !Ref PublicHostedZoneId
+      RecordSets:
+        - Name: !Join [ "", [bastion-,!Ref VPCName,., !Ref PublicHostedZoneName,.]]
+          Type: A
+          TTL: '300'
+          ResourceRecords:
+            - !GetAtt
+              - Bastion
+              - PublicIp
+  # ========================================================= #
+
+
+
+  # ================== Jenkins Server ======================= #
+  SecurityGroupJenkins:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: "Jenkins Allow HTTP/HTTPS inbound and outbound traffic"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: 0.0.0.0/0        
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join ["-", [jenkins, !Ref VPCName]]
+
+  JenkinsInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref Ubuntu24InstanceAMI
+      InstanceType: t2.large
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref SecurityGroupJenkins
+      SubnetId: !Ref PrivateSubnet1
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 50
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            sudo hostnamectl set-hostname jenkins.${VPCName}.${PrivateHostedZoneName}
+            apt update
+            apt install -y openjdk-17-jdk curl gnupg
+            curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee \
+              /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+            echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+              https://pkg.jenkins.io/debian-stable binary/ \
+              > /etc/apt/sources.list.d/jenkins.list
+            apt update
+            apt install -y jenkins
+
+            systemctl enable jenkins
+            systemctl start jenkins
+      Tags:
+        - Key: Name
+          Value: !Join [ ".", [jenkins,!Ref VPCName, !Ref PrivateHostedZoneName]]
+        - Key: environment
+          Value: !Ref VPCName
+  RecordSetGroupJenkinsPrivateDNS:
+    Type: 'AWS::Route53::RecordSetGroup'
+    DependsOn: JenkinsInstance
+    Properties:
+      Comment: Jenkins Instance Private DNS RecordSetGroup
+      HostedZoneId: !Ref PrivateHostedZone
+      RecordSets:
+        - Name: !Join [ "", [jenkins,.,!Ref VPCName,., !Ref PrivateHostedZoneName,.]]
+          Type: A
+          TTL: '300'
+          ResourceRecords:
+            - !GetAtt
+              - JenkinsInstance
+              - PrivateIp
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: jenkins-tg
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckPath: /login
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
+      Targets:
+        - Id: !Ref JenkinsInstance
+          Port: 8080
+             
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: jenkins-alb
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref SecurityGroupJenkins
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  HTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup            
+
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref OperationHostedZoneId
+      Name: !Ref JenkinsDNSName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID          
+  # ========================================================= #
+
+
+
+
+
+Outputs:
+  outputVPC:
+    Description: Infra VPC
+    Value: !Ref VPC
+  outputPublicSubnet1:
+    Description: Public Subnet One
+    Value: !Ref PublicSubnet1
+  outputPublicSubnet2:
+    Description: Public Subnet Two
+    Value: !Ref PublicSubnet2
+  outputPrivateSubnet1:
+    Description: Private Subnet One
+    Value: !Ref PrivateSubnet1
+  outputPrivateSubnet2:
+    Description: Private Subnet Two
+    Value: !Ref PrivateSubnet2
+  outputPrivateHostedZoneId:
+    Description: Private Hosted Zone
+    Value: !Ref PrivateHostedZone
+  outputClusterIAMInstanceProfileId:
+    Description: IAM Instance Profile
+    Value: !Ref ClusterEC2InstanceProfile
+
