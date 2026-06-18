@@ -1,0 +1,45 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Provisions an ACM Wildcard Certificate with SANs and automated DNS validation.
+
+Parameters:
+  Route53HostedZoneId:
+    Description: Domain Name ID
+    Type: String
+    Default: "Z0128C3"
+  Route53HostedZoneSubdomainId:
+    Description: Sub Domain Name ID
+    Type: String
+    Default: "Z0031GQD"
+  DomainName:
+    Type: String
+    Description: 'The root domain (e.g., example.com)'
+    Default: 'example.com'
+
+
+Resources:
+  WildcardCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '*.${DomainName}'
+      SubjectAlternativeNames:
+        - !Ref DomainName
+        - !Sub "*.${DomainName}"
+        - !Sub "*.operations.${DomainName}"
+        - !Sub "operations.${DomainName}"
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref Route53HostedZoneId
+        - DomainName: !Sub "*.operations.${DomainName}"
+          HostedZoneId: !Ref Route53HostedZoneSubdomainId
+
+
+Outputs:
+  CertificateArn:
+    Description: 'The ARN of the ACM Certificate'
+    Value: !Ref WildcardCertificate
+    Export:
+      Name: !Sub "TLS-CertificateArn"
+
