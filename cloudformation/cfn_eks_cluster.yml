@@ -1,0 +1,145 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >-
+  Uche | AWS CloudFormation EKS Cluster.
+  EKS Cluster with two node groups
+
+Parameters:
+  VPC:
+    Description: VPC ID
+    Type: String
+  EKSKeyPair:
+    Description: Keypair Name
+    Type: String
+  EKSClusterName:
+    Description: EKS Cluster Name
+    Type: String
+    Default: "appekscluster"
+  EKSVersion:
+    Description: Desired version of your AWS EKS Cluster.
+    Type: String
+    Default: 1.36
+    AllowedValues:
+      - 1.33
+      - 1.34
+      - 1.35
+      - 1.36
+  SubnetOne:
+    Description: Subnet One
+    Type: String
+  SubnetTwo:
+    Description: Subnet Two
+    Type: String
+
+
+
+    
+Resources:
+  eksSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Cluster communication with worker nodes
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub "${AWS::StackName}-SecurityGroup"
+      - Key: Project
+        Value: aws-eks
+
+  eksIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EKSClusterName}-iam-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - eks.amazonaws.com
+          Action:
+          - 'sts:AssumeRole'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+      - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+
+  eksNodeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EKSClusterName}-node-instance-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEKS_CNI_Policy"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+      Path: /
+      
+  eksCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Ref EKSClusterName
+      Version: !Ref EKSVersion
+      RoleArn:
+        "Fn::GetAtt": ["eksIAMRole", "Arn"]
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref eksSecurityGroup
+        SubnetIds:
+          - !Ref SubnetOne
+          - !Ref SubnetTwo
+
+  eksPythonNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref EKSClusterName
+      NodeRole:
+        "Fn::GetAtt": ["eksNodeInstanceRole", "Arn"]
+      AmiType: AL2023_x86_64_STANDARD
+      InstanceTypes:
+        - t3.medium
+      NodegroupName: "python-node-group"
+      RemoteAccess:
+        Ec2SshKey: !Ref EKSKeyPair
+      ScalingConfig:
+        MinSize: 1
+        DesiredSize: 3
+        MaxSize: 5
+      Labels:
+        Project: aws-eks
+      Subnets:
+        - !Ref SubnetOne
+        - !Ref SubnetTwo
+    DependsOn: [eksCluster, eksNodeInstanceRole]
+
+  eksPHPNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref EKSClusterName
+      NodeRole:
+        "Fn::GetAtt": ["eksNodeInstanceRole", "Arn"]
+      AmiType: AL2023_x86_64_STANDARD
+      InstanceTypes:
+        - t3.medium
+      NodegroupName: "php-node-group"
+      RemoteAccess:
+        Ec2SshKey: !Ref EKSKeyPair
+      ScalingConfig:
+        MinSize: 1
+        DesiredSize: 2
+        MaxSize: 3
+      Labels:
+        Project: aws-eks
+      Subnets:
+        - !Ref SubnetOne
+        - !Ref SubnetTwo
+    DependsOn: [eksCluster, eksNodeInstanceRole]
+    

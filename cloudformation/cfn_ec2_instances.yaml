@@ -1,0 +1,196 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Public & Private EC2 Instances
+
+Parameters:
+  UbuntuAMIId:
+    Type: String
+    Description: "The ID of the Ubuntu AMI."
+  DefaultInstancdType:
+    Description: Default Instance Type
+    Type: String
+    Default: "t2.large"
+  KeyName:
+    Description: Keypair Name
+    Type: String
+  VPC:
+    Description: VPC Id
+    Type: String
+  VPCName:
+    Description: VPC Environment Name
+    Type: String   
+  PublicSubnetID:
+    Description: Public Subnet ID
+    Type: String
+  PrivateSubnetID:
+    Description: Private Subnet ID
+    Type: String
+  DomainName:
+    Description: Private Domain Name
+    Type: String
+  PrivateHostedZone:
+    Description: Private Hosted Zone ID
+    Type: String
+  PublicServerName:
+    Description: Public Server Name
+    Type: String
+    Default: pubsvr
+  PrivateServerName:
+    Description: Private Server Name
+    Type: String
+    Default: privsvr
+  InstanceType:
+    Description: Instance Type
+    Type: String
+    Default: "t2.large"
+  InstanceVolumeSize:
+    Description: Instance Volume Size
+    Type: String
+    Default: 30
+
+
+
+
+Resources:
+  EC2DevIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: dev-iam-ec2role
+      Description: "IAM Dev EC2 Instance Role."
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore     
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+               - ec2.amazonaws.com
+            Action:
+             - 'sts:AssumeRole'
+      Path: /
+
+  DemoInstancePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: DemoPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - "ec2:*"
+            Resource: "*"
+      Roles:
+        - !Ref EC2DevIamRole
+
+  EC2DevInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref EC2DevIamRole]
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [security-group, dev]]
+      GroupDescription: "Security Groups"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join ["-", [security-group, dev]]
+
+
+  PublicServerInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAMIId
+      IamInstanceProfile: !Ref EC2DevInstanceProfile
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName 
+      SubnetId: !Ref PublicSubnetID
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref InstanceVolumeSize
+            DeleteOnTermination: true        
+      UserData:
+        Fn::Base64:
+          !Sub |
+             #!/bin/bash -xe
+             sudo hostnamectl set-hostname ${PublicServerName}
+      Tags:
+      - Key: Name
+        Value: !Join [".", [!Ref PublicServerName, !Ref VPCName, !Ref DomainName]]
+  PublicDNSPrivateServerInstance1:
+    Type: 'AWS::Route53::RecordSet'
+    DependsOn: PublicServerInstance1
+    Properties:
+      Comment: !Join ["", [!Ref PublicServerName, ".", !Ref VPCName, "." , !Ref DomainName, " Private DNS"]]
+      HostedZoneId: !Ref PrivateHostedZone
+      Name: !Join [".", [!Ref PublicServerName, !Ref VPCName, !Ref DomainName]]
+      Type: A
+      TTL: '300'
+      ResourceRecords:
+      - !GetAtt
+        - PublicServerInstance1
+        - PrivateIp
+
+
+  PrivateServerInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref UbuntuAMIId
+      IamInstanceProfile: !Ref EC2DevInstanceProfile
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SubnetId: !Ref PrivateSubnetID
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref InstanceVolumeSize
+            DeleteOnTermination: true                
+      UserData:
+        Fn::Base64:
+          !Sub |
+             #!/bin/bash -xe
+             sudo hostnamectl set-hostname ${PrivateServerName}
+      Tags:
+      - Key: Name
+        Value: !Join [".", [!Ref PrivateServerName, !Ref VPCName, !Ref DomainName]]
+  PrivateDNSPrivateServerInstance1:
+    Type: 'AWS::Route53::RecordSet'
+    DependsOn: PrivateServerInstance1
+    Properties:
+      Comment: !Join ["", [!Ref PrivateServerName, ".", !Ref VPCName, "." , !Ref DomainName, " Private DNS"]]
+      HostedZoneId: !Ref PrivateHostedZone
+      Name: !Join [".", [!Ref PrivateServerName, !Ref VPCName, !Ref DomainName]]
+      Type: A
+      TTL: '300'
+      ResourceRecords:
+      - !GetAtt
+        - PrivateServerInstance1
+        - PrivateIp
