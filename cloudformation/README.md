@@ -33,6 +33,7 @@ aws s3 cp main.yaml s3://${INFRA_S3_BUCKETNAME}/
 aws s3 cp cfn_vpc.yaml s3://${INFRA_S3_BUCKETNAME}/
 aws s3 cp cfn_ec2_priv_instances.yaml s3://${INFRA_S3_BUCKETNAME}/
 aws s3 cp cfn_ec2_pub_instances.yaml s3://${INFRA_S3_BUCKETNAME}/
+aws s3 cp cfn_ec2_pub_loopeach_instances.yaml s3://${INFRA_S3_BUCKETNAME}/
 aws s3 cp cfn_eks_cluster.yml s3://${INFRA_S3_BUCKETNAME}/
 ```
 
@@ -46,7 +47,7 @@ Create Template
 ```
 aws cloudformation create-stack \
 --region ${INFRA_AWS_REGION} \
---capabilities CAPABILITY_NAMED_IAM \
+--capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
 --stack-name ${INFRA_STACKNAME} \
 --parameters \
    ParameterKey=DomainName,ParameterValue=ctrlabs \
@@ -60,7 +61,7 @@ Update Template
 ```
 aws cloudformation update-stack \
 --region ${INFRA_AWS_REGION} \
---capabilities CAPABILITY_NAMED_IAM \
+--capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
 --stack-name ${INFRA_STACKNAME} \
 --parameters \
    ParameterKey=DomainName,ParameterValue=ctrlabs \
@@ -93,7 +94,9 @@ aws cloudformation delete-stack --stack-name ${INFRA_STACKNAME} --region ${INFRA
 
 Get Config
 ```
-aws eks --region us-east-1 update-kubeconfig --name dev1eks01
+aws eks list-clusters --output table
+aws eks describe-cluster --name appekscluster
+aws eks update-kubeconfig --name appekscluster --region us-east-1
 ```
 
 Test Config

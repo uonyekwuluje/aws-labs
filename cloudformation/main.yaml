@@ -53,12 +53,12 @@ Resources:
         - Key: environment
           Value: !Ref VPCName
 
-  PublicComputeVms:
+  PublicScaleComputeVms:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - InfraVPC
     Properties:
-      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_pub_instances.yaml]]
+      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_pub_loopeach_instances.yaml]]
       Parameters:
         VPC: !GetAtt 'InfraVPC.Outputs.VPC'
         VPCName: !Ref VPCName
@@ -70,40 +70,60 @@ Resources:
         PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
       Tags:
       - Key: Name
-        Value: !Join [-, [!Ref VPCName, PubComputeVms]]
+        Value: !Join [-, [!Ref VPCName, PubScaleComputeVms]]
 
-  PrivateComputeVms:
-    Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - InfraVPC
-    Properties:
-      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_priv_instances.yaml]]
-      Parameters:
-        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
-        VPCName: !Ref VPCName
-        KeyName: !Ref KeyName
-        UbuntuAMIId: !Ref Ubuntu24AMIId
-        PrivateSubnetID1: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
-        PrivateSubnetID2: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
-        DomainName: !Ref DomainName
-        PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
-      Tags:
-      - Key: Name
-        Value: !Join [-, [!Ref VPCName, PrivComputeVms]]
 
-  KubernetesCluster:
-    Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - InfraVPC
-    Properties:
-      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_eks_cluster.yml]]
-      Parameters:
-        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
-        EKSKeyPair: !Ref KeyName
-        SubnetOne: !GetAtt 'InfraVPC.Outputs.PublicSubnet1'
-        SubnetTwo: !GetAtt 'InfraVPC.Outputs.PublicSubnet2'
-        #SubnetOne: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
-        #SubnetTwo: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
-      Tags:
-      - Key: Name
-        Value: !Join [-, [!Ref VPCName, KubernetesCluster]]
+#  PublicComputeVms:
+#    Type: AWS::CloudFormation::Stack
+#    DependsOn:
+#      - InfraVPC
+#    Properties:
+#      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_pub_instances.yaml]]
+#      Parameters:
+#        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
+#        VPCName: !Ref VPCName
+#        KeyName: !Ref KeyName
+#        UbuntuAMIId: !Ref Ubuntu24AMIId
+#        PublicSubnetID1: !GetAtt 'InfraVPC.Outputs.PublicSubnet1'
+#        PublicSubnetID2: !GetAtt 'InfraVPC.Outputs.PublicSubnet2'
+#        DomainName: !Ref DomainName
+#        PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
+#      Tags:
+#      - Key: Name
+#        Value: !Join [-, [!Ref VPCName, PubComputeVms]]
+#
+#  PrivateComputeVms:
+#    Type: AWS::CloudFormation::Stack
+#    DependsOn:
+#      - InfraVPC
+#    Properties:
+#      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_priv_instances.yaml]]
+#      Parameters:
+#        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
+#        VPCName: !Ref VPCName
+#        KeyName: !Ref KeyName
+#        UbuntuAMIId: !Ref Ubuntu24AMIId
+#        PrivateSubnetID1: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
+#        PrivateSubnetID2: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
+#        DomainName: !Ref DomainName
+#        PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
+#      Tags:
+#      - Key: Name
+#        Value: !Join [-, [!Ref VPCName, PrivComputeVms]]
+#
+#  KubernetesCluster:
+#    Type: AWS::CloudFormation::Stack
+#    DependsOn:
+#      - InfraVPC
+#    Properties:
+#      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_eks_cluster.yml]]
+#      Parameters:
+#        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
+#        EKSKeyPair: !Ref KeyName
+#        SubnetOne: !GetAtt 'InfraVPC.Outputs.PublicSubnet1'
+#        SubnetTwo: !GetAtt 'InfraVPC.Outputs.PublicSubnet2'
+#        #SubnetOne: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
+#        #SubnetTwo: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
+#      Tags:
+#      - Key: Name
+#        Value: !Join [-, [!Ref VPCName, KubernetesCluster]]

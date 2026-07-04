@@ -1,0 +1,151 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Public Autoscale EC2 Instances
+
+# CRITICAL: You must include this transform to unlock the ForEach capability
+Transform: 'AWS::LanguageExtensions'
+
+Parameters:
+  UbuntuAMIId:
+    Type: String
+    Description: "The ID of the Ubuntu AMI."
+  DefaultInstancdType:
+    Description: Default Instance Type
+    Type: String
+    Default: "t2.large"
+  KeyName:
+    Description: Keypair Name
+    Type: String
+  VPC:
+    Description: VPC Id
+    Type: String
+  VPCName:
+    Description: VPC Environment Name
+    Type: String   
+  PublicSubnetID1:
+    Description: Public Subnet ID 1
+    Type: String
+  PublicSubnetID2:
+    Description: Public Subnet ID 2
+    Type: String
+  DomainName:
+    Description: Private Domain Name
+    Type: String
+  PrivateHostedZone:
+    Description: Private Hosted Zone ID
+    Type: String
+  InstanceType:
+    Description: Instance Type
+    Type: String
+    Default: "t2.large"
+  InstanceVolumeSize:
+    Description: Instance Volume Size
+    Type: String
+    Default: 30
+
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [pub, security-group, dev]]
+      GroupDescription: "Public Security Groups"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+      Tags:
+      - Key: Name
+        Value: !Join ["-", [pub, security-group, dev]]
+
+
+#  PublicServerInstance1:
+#    Type: AWS::EC2::Instance
+#    Properties:
+#      ImageId: !Ref UbuntuAMIId
+#      InstanceType: !Ref InstanceType
+#      KeyName: !Ref KeyName 
+#      SubnetId: !Ref PublicSubnetID1
+#      SecurityGroupIds:
+#        - !Ref SecurityGroup
+#      BlockDeviceMappings:
+#        - DeviceName: /dev/sda1
+#          Ebs:
+#            VolumeSize: !Ref InstanceVolumeSize
+#            DeleteOnTermination: true        
+#      UserData:
+#        Fn::Base64:
+#          !Sub |
+#             #!/bin/bash -xe
+#             sudo hostnamectl set-hostname pubsvr
+#      Tags:
+#      - Key: Name
+#        Value: !Join [".", [pubsvr, !Ref VPCName, !Ref DomainName]]
+#  PublicDNSPrivateServerInstance1:
+#    Type: 'AWS::Route53::RecordSet'
+#    DependsOn: PublicServerInstance1
+#    Properties:
+#      Comment: !Join ["", [pubsvr, ".", !Ref VPCName, "." , !Ref DomainName, " Private DNS"]]
+#      HostedZoneId: !Ref PrivateHostedZone
+#      Name: !Join [".", [pubsvr, !Ref VPCName, !Ref DomainName]]
+#      Type: A
+#      TTL: '300'
+#      ResourceRecords:
+#      - !GetAtt
+#        - PublicServerInstance1
+#        - PrivateIp
+
+
+  Fn::ForEach::Instances:
+    - Index
+    - ['1','2','3','4','5'] 
+    - EC2WebSvr${Index}:
+        Type: AWS::EC2::Instance
+        Properties:
+          ImageId: !Ref UbuntuAMIId
+          InstanceType: !Ref InstanceType
+          KeyName: !Ref KeyName
+          SubnetId: !Ref PublicSubnetID1
+          SecurityGroupIds:
+            - !Ref SecurityGroup
+          BlockDeviceMappings:
+            - DeviceName: /dev/sda1
+              Ebs:
+                VolumeSize: !Ref InstanceVolumeSize
+                DeleteOnTermination: true      
+          UserData:
+            Fn::Base64:
+              Fn::Sub: |
+                #!/bin/bash
+                hostnamectl set-hostname webserver-${Index}.${VPCName}.${DomainName}
+          Tags:
+            - Key: Name
+              Value:
+                Fn::Sub: webserver-${Index} 
+
+      EC2WebSvr${Index}Dns:
+        Type: 'AWS::Route53::RecordSet'
+        Properties:
+          HostedZoneId: !Ref PrivateHostedZone
+          Name: !Sub webserver-${Index}.${VPCName}.${DomainName}
+          Type: A
+          TTL: '300'
+          ResourceRecords:
+            - !GetAtt
+              - !Sub "EC2WebSvr${Index}" 
+              - PrivateIp            
