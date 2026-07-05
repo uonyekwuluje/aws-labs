@@ -46,10 +46,10 @@ Parameters:
 
 
 Resources:
-  SecurityGroup:
+  ScaleSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Join ["-", [pub, security-group, dev]]
+      GroupName: !Join ["-", [!Ref VPCName, security-group]]
       GroupDescription: "Public Security Groups"
       VpcId: !Ref VPC
       SecurityGroupIngress:
@@ -71,7 +71,7 @@ Resources:
         CidrIp: 0.0.0.0/0
       Tags:
       - Key: Name
-        Value: !Join ["-", [pub, security-group, dev]]
+        Value: !Join ["-", [!Ref VPCName, security-group]]
 
 
   Fn::ForEach::Instances:
@@ -85,7 +85,7 @@ Resources:
           KeyName: !Ref KeyName
           SubnetId: !Ref PublicSubnetID1
           SecurityGroupIds:
-            - !Ref SecurityGroup
+            - !Ref ScaleSecurityGroup
           BlockDeviceMappings:
             - DeviceName: /dev/sda1
               Ebs:

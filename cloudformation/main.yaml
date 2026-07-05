@@ -31,6 +31,12 @@ Parameters:
     Description: VPC Network Octet 
     Type: String
     Default: 10.50
+  PublicHostedZoneId:
+    Description: Public Zone HostedID
+    Type: String
+  PublicHostedZoneName:
+    Description: Public HostedZone Name
+    Type: String
 
 
 
@@ -53,6 +59,7 @@ Resources:
         - Key: environment
           Value: !Ref VPCName
 
+
   PublicScaleComputeVms:
     Type: AWS::CloudFormation::Stack
     DependsOn:
@@ -73,57 +80,61 @@ Resources:
         Value: !Join [-, [!Ref VPCName, PubScaleComputeVms]]
 
 
-#  PublicComputeVms:
-#    Type: AWS::CloudFormation::Stack
-#    DependsOn:
-#      - InfraVPC
-#    Properties:
-#      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_pub_instances.yaml]]
-#      Parameters:
-#        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
-#        VPCName: !Ref VPCName
-#        KeyName: !Ref KeyName
-#        UbuntuAMIId: !Ref Ubuntu24AMIId
-#        PublicSubnetID1: !GetAtt 'InfraVPC.Outputs.PublicSubnet1'
-#        PublicSubnetID2: !GetAtt 'InfraVPC.Outputs.PublicSubnet2'
-#        DomainName: !Ref DomainName
-#        PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
-#      Tags:
-#      - Key: Name
-#        Value: !Join [-, [!Ref VPCName, PubComputeVms]]
-#
-#  PrivateComputeVms:
-#    Type: AWS::CloudFormation::Stack
-#    DependsOn:
-#      - InfraVPC
-#    Properties:
-#      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_priv_instances.yaml]]
-#      Parameters:
-#        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
-#        VPCName: !Ref VPCName
-#        KeyName: !Ref KeyName
-#        UbuntuAMIId: !Ref Ubuntu24AMIId
-#        PrivateSubnetID1: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
-#        PrivateSubnetID2: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
-#        DomainName: !Ref DomainName
-#        PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
-#      Tags:
-#      - Key: Name
-#        Value: !Join [-, [!Ref VPCName, PrivComputeVms]]
-#
-#  KubernetesCluster:
-#    Type: AWS::CloudFormation::Stack
-#    DependsOn:
-#      - InfraVPC
-#    Properties:
-#      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_eks_cluster.yml]]
-#      Parameters:
-#        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
-#        EKSKeyPair: !Ref KeyName
-#        SubnetOne: !GetAtt 'InfraVPC.Outputs.PublicSubnet1'
-#        SubnetTwo: !GetAtt 'InfraVPC.Outputs.PublicSubnet2'
-#        #SubnetOne: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
-#        #SubnetTwo: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
-#      Tags:
-#      - Key: Name
-#        Value: !Join [-, [!Ref VPCName, KubernetesCluster]]
+  PublicComputeVms:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - InfraVPC
+    Properties:
+      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_pub_instances.yaml]]
+      Parameters:
+        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
+        VPCName: !Ref VPCName
+        KeyName: !Ref KeyName
+        UbuntuAMIId: !Ref Ubuntu24AMIId
+        PublicSubnetID1: !GetAtt 'InfraVPC.Outputs.PublicSubnet1'
+        PublicSubnetID2: !GetAtt 'InfraVPC.Outputs.PublicSubnet2'
+        DomainName: !Ref DomainName
+        PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
+        PublicHostedZoneName: !Ref PublicHostedZoneName
+        PublicHostedZoneId: !Ref PublicHostedZoneId        
+      Tags:
+      - Key: Name
+        Value: !Join [-, [!Ref VPCName, PubComputeVms]]
+
+
+  PrivateComputeVms:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - InfraVPC
+    Properties:
+      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_ec2_priv_instances.yaml]]
+      Parameters:
+        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
+        VPCName: !Ref VPCName
+        KeyName: !Ref KeyName
+        UbuntuAMIId: !Ref Ubuntu24AMIId
+        PrivateSubnetID1: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
+        PrivateSubnetID2: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
+        DomainName: !Ref DomainName
+        PrivateHostedZone: !GetAtt 'InfraVPC.Outputs.PrivateHostedZone'
+      Tags:
+      - Key: Name
+        Value: !Join [-, [!Ref VPCName, PrivComputeVms]]
+
+
+  KubernetesCluster:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - InfraVPC
+    Properties:
+      TemplateURL: !Join ['', ['http://s3.amazonaws.com/', !Ref BucketName, /cfn_eks_cluster.yml]]
+      Parameters:
+        VPC: !GetAtt 'InfraVPC.Outputs.VPC'
+        EKSKeyPair: !Ref KeyName
+        SubnetOne: !GetAtt 'InfraVPC.Outputs.PublicSubnet1'
+        SubnetTwo: !GetAtt 'InfraVPC.Outputs.PublicSubnet2'
+        #SubnetOne: !GetAtt 'InfraVPC.Outputs.PrivateSubnet1'
+        #SubnetTwo: !GetAtt 'InfraVPC.Outputs.PrivateSubnet2'
+      Tags:
+      - Key: Name
+        Value: !Join [-, [!Ref VPCName, KubernetesCluster]]

@@ -44,10 +44,10 @@ Parameters:
 
 
 Resources:
-  SecurityGroup:
+  PrivSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Join ["-", [priv, security-group, dev]]
+      GroupName: !Join ["-", [!Ref VPCName, priv, security-group]]
       GroupDescription: "Security Groups"
       VpcId: !Ref VPC
       SecurityGroupIngress:
@@ -69,7 +69,7 @@ Resources:
         CidrIp: 0.0.0.0/0
       Tags:
       - Key: Name
-        Value: !Join ["-", [priv, security-group, dev]]
+        Value: !Join ["-", [!Ref VPCName, priv, security-group]]
 
 
 
@@ -81,7 +81,7 @@ Resources:
       KeyName: !Ref KeyName
       SubnetId: !Ref PrivateSubnetID1
       SecurityGroupIds:
-        - !Ref SecurityGroup
+        - !Ref PrivSecurityGroup
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:

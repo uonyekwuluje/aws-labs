@@ -40,13 +40,20 @@ Parameters:
     Description: Instance Volume Size
     Type: String
     Default: 30
+  PublicHostedZoneId:
+    Description: Public Zone HostedID
+    Type: String
+  PublicHostedZoneName:
+    Description: Public HostedZone Name
+    Type: String
+
 
 
 Resources:
-  SecurityGroup:
+  PubSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Join ["-", [pub, security-group, dev]]
+      GroupName: !Join ["-", [!Ref VPCName, pub, security-group]]
       GroupDescription: "Public Security Groups"
       VpcId: !Ref VPC
       SecurityGroupIngress:
@@ -68,10 +75,10 @@ Resources:
         CidrIp: 0.0.0.0/0
       Tags:
       - Key: Name
-        Value: !Join ["-", [pub, security-group, dev]]
+        Value: !Join ["-", [!Ref VPCName, pub, security-group]]
 
 
-  PublicServerInstance1:
+  KibanaInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref UbuntuAMIId
@@ -79,7 +86,7 @@ Resources:
       KeyName: !Ref KeyName 
       SubnetId: !Ref PublicSubnetID1
       SecurityGroupIds:
-        - !Ref SecurityGroup
+        - !Ref PubSecurityGroup
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
@@ -89,20 +96,33 @@ Resources:
         Fn::Base64:
           !Sub |
              #!/bin/bash -xe
-             sudo hostnamectl set-hostname pubsvr
+             sudo hostnamectl set-hostname kibana
       Tags:
       - Key: Name
-        Value: !Join [".", [pubsvr, !Ref VPCName, !Ref DomainName]]
-  PublicDNSPrivateServerInstance1:
+        Value: !Join [".", [kibana, !Ref VPCName, !Ref DomainName]]
+  PrivateDNSKibanaInstance:
     Type: 'AWS::Route53::RecordSet'
-    DependsOn: PublicServerInstance1
+    DependsOn: KibanaInstance
     Properties:
-      Comment: !Join ["", [pubsvr, ".", !Ref VPCName, "." , !Ref DomainName, " Private DNS"]]
+      Comment: !Join ["", [kibana, ".", !Ref VPCName, "." , !Ref DomainName, " Private DNS"]]
       HostedZoneId: !Ref PrivateHostedZone
-      Name: !Join [".", [pubsvr, !Ref VPCName, !Ref DomainName]]
+      Name: !Join [".", [kibana, !Ref VPCName, !Ref DomainName]]
       Type: A
       TTL: '300'
       ResourceRecords:
       - !GetAtt
-        - PublicServerInstance1
+        - KibanaInstance
         - PrivateIp
+  PublicDNSKibanaInstance:
+    Type: 'AWS::Route53::RecordSet'
+    DependsOn: KibanaInstance
+    Properties:
+      Comment: !Join ["", [kibana, ".", !Ref PublicHostedZoneName, " Public DNS"]]
+      HostedZoneId: !Ref PublicHostedZoneId
+      Name: !Join [".", [kibana, !Ref PublicHostedZoneName]]
+      Type: A
+      TTL: '300'
+      ResourceRecords:
+      - !GetAtt
+        - KibanaInstance
+        - PublicIp
