@@ -74,43 +74,6 @@ Resources:
         Value: !Join ["-", [pub, security-group, dev]]
 
 
-#  PublicServerInstance1:
-#    Type: AWS::EC2::Instance
-#    Properties:
-#      ImageId: !Ref UbuntuAMIId
-#      InstanceType: !Ref InstanceType
-#      KeyName: !Ref KeyName 
-#      SubnetId: !Ref PublicSubnetID1
-#      SecurityGroupIds:
-#        - !Ref SecurityGroup
-#      BlockDeviceMappings:
-#        - DeviceName: /dev/sda1
-#          Ebs:
-#            VolumeSize: !Ref InstanceVolumeSize
-#            DeleteOnTermination: true        
-#      UserData:
-#        Fn::Base64:
-#          !Sub |
-#             #!/bin/bash -xe
-#             sudo hostnamectl set-hostname pubsvr
-#      Tags:
-#      - Key: Name
-#        Value: !Join [".", [pubsvr, !Ref VPCName, !Ref DomainName]]
-#  PublicDNSPrivateServerInstance1:
-#    Type: 'AWS::Route53::RecordSet'
-#    DependsOn: PublicServerInstance1
-#    Properties:
-#      Comment: !Join ["", [pubsvr, ".", !Ref VPCName, "." , !Ref DomainName, " Private DNS"]]
-#      HostedZoneId: !Ref PrivateHostedZone
-#      Name: !Join [".", [pubsvr, !Ref VPCName, !Ref DomainName]]
-#      Type: A
-#      TTL: '300'
-#      ResourceRecords:
-#      - !GetAtt
-#        - PublicServerInstance1
-#        - PrivateIp
-
-
   Fn::ForEach::Instances:
     - Index
     - ['1','2','3','4','5'] 
