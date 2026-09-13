@@ -1,166 +1,123 @@
 #!/usr/bin/env python3
 import boto3
-from troposphere import ec2, Tags, ImportValue, Template, Ref, Base64, Join
+from troposphere import ec2, Tags, ImportValue, Template, Ref, Base64, Join, route53, GetAtt, Output, Export, Sub
+import troposphere.ec2 as ec2
+
+from troposphere.route53 import RecordSetType
+from infra_modules import return_vpc_component_ids
+
 
 client = boto3.client('ec2', region_name='us-east-1')
 cfn_template = boto3.client('cloudformation', region_name='us-east-1')
 
 EC2_KEYPAIR = "infracidlabs-key"
-EC2_INSTANCE_TYPE = "t2.small"
-UBUNTU_AMI_ID = "ami-0866a3c8686eaeeba"
 
 # Create object that will generate our template
 t = Template()
 
-def get_vpc_id(vpc_name):
-    """ Get VPC ID """
-    response = client.describe_vpcs(
-        Filters=[
-            {
-                'Name': 'tag:Name',
-                'Values': [
-                    vpc_name,
-                ]
-            }
-        ]
-    )
-    resp = response['Vpcs']
-    if resp:
-        return resp[0]['VpcId']
+# Create or update ec2 instance stack
+def create_update_instance_template(vpc_name, stack_name, hostedzone_name, aws_build_region, ec2_instance_db):
+    required_status = "CREATE_COMPLETE"
+    if return_vpc_component_ids.stack_exists(stack_name, required_status):
+        print(f"{stack_name} Exists. Updating Now")
+        generate_instance_cfn_template(vpc_name, stack_name, hostedzone_name,
+                                       aws_build_region, ec2_instance_db, stack_action="update")
     else:
-       print('No vpcs found')
-
-
-def get_subnet_id(vpc_name, subnet_name):
-    """ Get Subnet ID """
-    subnet_name = f"{vpc_name}-{subnet_name}"
-    response = client.describe_subnets(
-        Filters=[
-            {
-                'Name': 'tag:Name',
-                'Values': [
-                    subnet_name,
-                ]
-            }
-        ]
-    )
-    resp_val = response['Subnets'][0]['SubnetId']
-    if resp_val:
-       return resp_val 
-    else:
-       print('Subnet Not Found')
-
-
-def get_security_group_id(security_group_name):
-    """ Get Security Group ID """
-    response = client.describe_security_groups(
-        Filters=[
-          { 
-            'Name': 'tag:Name', 'Values': [security_group_name] 
-          }
-        ]
-    )
-    resp_sg_val = response['SecurityGroups'][0]['GroupId']
-    if resp_sg_val:
-       return resp_sg_val
-    else:
-       print('Security Group Not Found')
+        print(f"{stack_name} Does Not Exist. Creating Now")
+        generate_instance_cfn_template(vpc_name, stack_name, hostedzone_name, aws_build_region,
+                                       ec2_instance_db, stack_action="create")
 
 
 
+# Generate EC2 Template and create stack
+def generate_instance_cfn_template(vpc_name, stack_name, hostedzone_name, vpc_region,
+                                   ec2_instance_db, stack_action):
+    try:
+        #security_group_id = return_vpc_component_ids.get_security_group_id(f"{vpc_name}", "bastion-sg")
+        security_group_id = return_vpc_component_ids.get_security_group_id(f"{vpc_name}", "kubernetes-sg")
+        route53_zone_id = return_vpc_component_ids.get_hosted_zone_id(f"{vpc_name}", f"{hostedzone_name}", f"{vpc_region}")
+        for instance in ec2_instance_db:
+            print(f"VPC Name => {vpc_name}")
+            print(f"VPC ID   => {return_vpc_component_ids.get_vpc_id(vpc_name)}")
+            print(f"Instance Name => {instance[0]}")
+            print(f"Instance FQDN => {instance[0]}.{vpc_name}.{hostedzone_name}")
+            print(f"Instance Type => {instance[1]}")
+            print(f"Subnet ID     => {return_vpc_component_ids.get_subnet_id(vpc_name, instance[2])}")
+            print(f"Instance Keypair => {EC2_KEYPAIR}")
+            print(f"AMI Instance ID => {instance[3]}")
+            print(f"Instance Storage => {instance[4]}")
+            print(f"Instance Security Group => {security_group_id}")
+            print(f"Private Hosted Zone ID  => {route53_zone_id}")
+            print("\n")
+
+            block_device = ec2.BlockDeviceMapping(
+                DeviceName="/dev/xvda",  
+                Ebs=ec2.EBSBlockDevice(
+                    VolumeSize=int(f"{instance[4]}"),      
+                    VolumeType="gp3",    
+                    DeleteOnTermination=True
+                )
+            )
+
+            serverName = f"{instance[0]}"
+            instance = ec2.Instance(
+                serverName,
+                ImageId=f"{instance[3]}",
+                UserData=Base64(Join('', [
+                  "#!/bin/bash\n"
+                  "sudo hostnamectl set-hostname ",serverName,"\n"
+                ])),
+                InstanceType=f"{instance[1]}",
+                KeyName=f"{EC2_KEYPAIR}",
+                SecurityGroupIds=[security_group_id],
+                SubnetId=f"{return_vpc_component_ids.get_subnet_id(vpc_name, instance[2])}",
+                BlockDeviceMappings=[block_device],
+                Tags=Tags(
+                  Name=serverName,
+                  Environment=vpc_name,
+                ),
+            )
+            t.add_resource(instance)
+
+            # Set Private DNS 
+            instance_record = RecordSetType(
+               f"{serverName}PrivateDNSRecord",
+               HostedZoneName=Join("", [vpc_name,".", hostedzone_name, "."]),
+               Comment=f"DNS name for {serverName}.",
+               Name=Join(
+                    "", [serverName, ".", vpc_name, ".", hostedzone_name, "."]
+               ),
+               Type="A",
+               TTL="900",
+               ResourceRecords=[GetAtt(serverName, "PrivateIp")],
+            ) 
+            t.add_resource(instance_record)
 
 
+        # Print Cloudformation Template
+        print(t.to_yaml())
 
-
-if __name__ == '__main__':
-    public_nodes = 2
-    private_nodes = 3
-    vpc_name = "dev"
-    public_subnet_name = "PublicSubnet1"
-    private_subnet_name = "PrivateSubnet1"
-    security_group_name = "base-sg"
-    vpc_id = get_vpc_id(vpc_name)
-    public_subnet_id = get_subnet_id(vpc_name, public_subnet_name)
-    private_subnet_id = get_subnet_id(vpc_name, private_subnet_name)
-    security_group_id = get_security_group_id(security_group_name) 
-    print(f"VPC ID => {vpc_id}")
-    print(f"Public Subnet ID => {public_subnet_id}")
-    print(f"Private Subnet ID => {private_subnet_id}")
-    print(f"Security Group ID => {security_group_id}")
-
-
-    infraSecGrpBase = ec2.SecurityGroup('InfrabaseSecurityGroup')
-    infraSecGrpBase.GroupDescription = "Base Infra Security Group"
-    infraSecGrpBase.GroupName = "BaseInfraSecurity"
-    infraSecGrpBase.VpcId = vpc_id
-    infraSecGrpBase.SecurityGroupIngress = [
-            ec2.SecurityGroupRule(
-                IpProtocol="tcp",
-                FromPort="22",
-                ToPort="22",
-                CidrIp="0.0.0.0/0",
-            ),
-            ec2.SecurityGroupRule(
-                IpProtocol="tcp",
-                FromPort="80",
-                ToPort="80",
-                CidrIp="0.0.0.0/0",
-            ),
-    ]
-    infraSecGrpBase.Tags=Tags(
-       Name="BaseInfraSecurity-SG",
-       Environment=vpc_name,
-    )
-    t.add_resource(infraSecGrpBase)
-
-    for i in range(public_nodes):
-        serverName = f"pubsvr0{i}"
-        instance = ec2.Instance(
-            "pubsvr0{}".format(str(i)),
-            ImageId=UBUNTU_AMI_ID,
-            UserData=Base64(Join('', [
-              "#!/bin/bash\n"
-              "sudo hostnamectl set-hostname ",serverName,"\n"       
-            ])),
-            InstanceType=EC2_INSTANCE_TYPE,
-            KeyName=EC2_KEYPAIR,
-            SecurityGroupIds=[Ref(infraSecGrpBase)],
-            SubnetId=public_subnet_id,
-            Tags=Tags(
-              Name=f"pub-svr0{i}",
-              Environment=vpc_name,
-            ),
-        )
-        t.add_resource(instance)
-
-    for i in range(private_nodes):
-        instance = ec2.Instance(
-            "privsvr0{}".format(str(i)),
-            ImageId=UBUNTU_AMI_ID,
-            #UserData=Base64(Join("", userData)),
-            InstanceType=EC2_INSTANCE_TYPE,
-            KeyName=EC2_KEYPAIR,
-            SecurityGroupIds=[security_group_id],
-            SubnetId=private_subnet_id,
-            Tags=Tags(
-              Name=f"priv-svr0{i}",
-              Environment=vpc_name,
-            ),
-        )
-        t.add_resource(instance)
-
-
-    print(t.to_yaml())
-
-    stack_name = "dev-ec2-stack"
-    print(f"Creating {stack_name} stack")
-
-    cfn_template.create_stack(
-        StackName=stack_name,
-        TemplateBody=t.to_yaml()
-    )
-    waiter = cfn_template.get_waiter("stack_create_complete")
-    waiter.wait(
-        StackName=stack_name
-    )
-    print(f"{stack_name} stack creation complete")
+        if stack_action == "create":
+            print(f"Creating {stack_name} stack")
+            cfn_template.create_stack(
+                StackName=stack_name,
+                TemplateBody=t.to_yaml()
+            )
+            waiter = cfn_template.get_waiter("stack_create_complete")
+            waiter.wait(
+                StackName=stack_name
+            )
+            print(f"{stack_name} stack creation complete")
+        elif stack_action == "update":
+            print(f"Updating {stack_name} stack")
+            cfn_template.update_stack(
+                StackName=stack_name,
+                TemplateBody=t.to_yaml()
+            )
+            waiter = cfn_template.get_waiter("stack_update_complete")
+            waiter.wait(
+                StackName=stack_name
+            )
+            print(f"{stack_name} stack update complete")
+    except Exception as e:
+        print(f"An error occurred: {e}")

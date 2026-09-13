@@ -132,10 +132,10 @@ def generate_cfn_template(vpc_name, region, hostedzone_name, stack_name, octet_a
 
         # Public Subnet Maps
         public_subnet_configs = [
-            {"name": "PublicWebSubnet1a", "cidr": f"{octet_address}.1.0/24", "az": "us-east-1a", "subnet_type": "public_web", 
-             "route_table": "PublicRouteTableAssociationWeb1a", "is_public_ip": "True"},
-            {"name": "PublicSvcSubnet1b", "cidr": f"{octet_address}.2.0/24", "az": "us-east-1b", "subnet_type": "public_svc", 
-             "route_table": "PublicRouteTableAssociationSvc1b", "is_public_ip": "True"}
+            {"name": "publicSubnet1a", "cidr": f"{octet_address}.1.0/24", "az": "us-east-1a", "subnet_type": "public_subnet", 
+             "route_table": "PublicRouteTableAssociation1a", "is_public_ip": "True"},
+            {"name": "publicSubnet1b", "cidr": f"{octet_address}.2.0/24", "az": "us-east-1b", "subnet_type": "public_subnet", 
+             "route_table": "PublicRouteTableAssociation1b", "is_public_ip": "True"}
         ]
 
         subnet_creation_association(
@@ -159,7 +159,7 @@ def generate_cfn_template(vpc_name, region, hostedzone_name, stack_name, octet_a
         vpc_pubeip_subnet_cfn.AvailabilityZone = "us-east-1b"
         vpc_pubeip_subnet_cfn.MapPublicIpOnLaunch = True
         vpc_pubeip_subnet_cfn.CidrBlock = f"{octet_address}.30.0/24"
-        vpc_pubeip_subnet_cfn.Tags = Tags({"Name": f"{vpc_name}-PublicEIPSubnet1c", "subnet_type": "public_eip"})
+        vpc_pubeip_subnet_cfn.Tags = Tags({"Name": f"{vpc_name}-PublicEIPSubnet1b", "subnet_type": "public_eip"})
         t.add_resource(vpc_pubeip_subnet_cfn)
 
         # Create Public Subnet One RouteTable Association (AWS::EC2::SubnetRouteTableAssociation)
@@ -192,7 +192,7 @@ def generate_cfn_template(vpc_name, region, hostedzone_name, stack_name, octet_a
         # Create Private Routetable (AWS::EC2::RouteTable)
         vpc_private_routetable_cfn = ec2.RouteTable('PrivateRouteTable')
         vpc_private_routetable_cfn.VpcId = Ref(vpc_cfn)
-        vpc_private_routetable_cfn.Tags = Tags(Name=f"{vpc_name}-privateroutetable")
+        vpc_private_routetable_cfn.Tags = Tags(Name=f"{vpc_name}-PrivateRouteTable")
         t.add_resource(vpc_private_routetable_cfn) 
 
         # Create Private Route (AWS::EC2::Route)
@@ -205,10 +205,10 @@ def generate_cfn_template(vpc_name, region, hostedzone_name, stack_name, octet_a
 
         # Private Subnet Maps
         private_subnet_configs = [
-            {"name": "PrivateDbSubnet1a", "cidr": f"{octet_address}.11.0/24", "az": "us-east-1a", "subnet_type": "private_db",
-             "route_table": "PrivateRouteTableAssociationDb1a", "is_public_ip": "False"},
-            {"name": "PrivateSvcSubnet1b", "cidr": f"{octet_address}.12.0/24", "az": "us-east-1b", "subnet_type": "private_svc",
-             "route_table": "PrivateRouteTableAssociationSvc1b", "is_public_ip": "False"}
+            {"name": "privateSubnet1a", "cidr": f"{octet_address}.11.0/24", "az": "us-east-1a", "subnet_type": "private_app",
+             "route_table": "PrivateRouteTableAssociation1a", "is_public_ip": "False"},
+            {"name": "privateSubnet1b", "cidr": f"{octet_address}.12.0/24", "az": "us-east-1b", "subnet_type": "private_app",
+             "route_table": "PrivateRouteTableAssociation1b", "is_public_ip": "False"}
         ]
 
         subnet_creation_association(
@@ -230,7 +230,6 @@ def generate_cfn_template(vpc_name, region, hostedzone_name, stack_name, octet_a
         vpc_private_hostedzone_cfn.HostedZoneTags = Tags(Name=f"{hostedzone_name}")
         vpc_private_hostedzone_cfn.VPCs = [route53.HostedZoneVPCs(VPCId=Ref(vpc_cfn), VPCRegion=Ref("AWS::Region"))]
         t.add_resource(vpc_private_hostedzone_cfn)
-
 
 
         # Print Cloudformation Template
